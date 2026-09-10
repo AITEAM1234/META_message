@@ -46,10 +46,24 @@ deploy แล้วขึ้น `FUNCTION_INVOCATION_FAILED` ทันที เ
 
 ### 1. เตรียม Postgres
 
-ใช้ **Neon** (ฟรี) หรือ Supabase / Vercel Postgres — แชทเป็นข้อความล้วน วันละไม่กี่พันแถว
-ฟรีเทียร์เหลือเฟือ **ไม่ต้องกังวลเรื่องขนาดเหมือนไฟล์รูปในระบบหลัก**
-
+ใช้ **Supabase** หรือ Neon ก็ได้ — โค้ดเป็น Postgres ธรรมดา ไม่ผูกกับเจ้าไหน
 ตารางสร้างเองอัตโนมัติตอนเรียกครั้งแรก ไม่ต้องรัน SQL มือ
+
+**ถ้าใช้ Supabase** — Dashboard → ปุ่ม **Connect** → เลือกแท็บ **Transaction pooler**
+
+> ⚠️ **ต้องใช้สตริงของ pooler (พอร์ต 6543) ไม่ใช่ Direct connection (5432)** เพราะ
+> 1. serverless เปิด connection ถี่มาก ต่อตรงจะเต็มโควตาเร็ว
+> 2. Direct connection ของแพลนฟรีเป็น **IPv6 อย่างเดียว** ซึ่ง Vercel ต่อไม่ได้
+>
+> ถ้าเจอ error ประมาณ `prepared statement "sX" already exists` ให้สลับไปใช้
+> **Session pooler** แทน — transaction mode บางเวอร์ชันมีปัญหากับ prepared statement
+
+**เรื่องขนาด — ทั้งสองเจ้าฟรีที่ ~500 MB**
+ตัวหนักคือคอลัมน์ `raw` (payload ดิบ) ราว 1-2 KB ต่อข้อความ · วันละ 3,000 ข้อความ ≈ 150 MB/เดือน
+→ เต็มใน ~3 เดือน **ต้องมีตัวลบของเก่าที่ sync ไปแล้ว** (ยังไม่ได้เขียน — ดูหัวข้อ "ที่ยังต้องทำ")
+
+> ⚠️ โปรเจกต์ Supabase แพลนฟรี **จะถูกพักถ้าไม่มีการใช้งาน 1 สัปดาห์**
+> ปกติไม่เป็นปัญหาเพราะมีแชทเข้าทุกวัน แต่ถ้าหยุดยาว (ปิดเพจ/ช่วงทดสอบ) ต้องไปปลุกเอง
 
 ### 2. ตั้ง Environment Variables ใน Vercel
 
@@ -60,7 +74,7 @@ Project → Settings → Environment Variables (ใส่ให้ครบท�
 | `VERIFY_TOKEN` | ตั้งเอง — ต้องใส่ค่าเดียวกันตอนผูก webhook |
 | `APP_SECRET` | Meta App → App settings → Basic → App Secret |
 | `EXPORT_TOKEN` | ตั้งเอง สุ่มยาว ๆ |
-| `DATABASE_URL` | connection string จาก Neon (`?sslmode=require`) |
+| `DATABASE_URL` | connection string จาก Supabase (**Transaction pooler** พอร์ต 6543) หรือ Neon |
 
 **ตั้ง env แล้วต้อง redeploy** ค่าใหม่ถึงจะมีผล
 
@@ -187,8 +201,20 @@ sync เข้า mixhub → daily.py รายงาน:
 
 ## ที่ยังต้องทำ
 
-1. เปิดบัญชี Neon → เอา `DATABASE_URL` ใส่ Vercel → redeploy → เช็ก `/api/health`
-2. สร้าง Meta App + ผูก webhook + subscribe เพจ
-3. **ตกลงกติกา `/close <ยอด>` กับทีมแอดมินก่อนเริ่มเก็บ** ไม่งั้น conversion เป็น 0 ทุกเพจ
+**ฝั่ง Vercel / ฐานข้อมูล**
+1. **ปิด Deployment Protection** (Settings → Deployment Protection → Disabled)
+   ไม่งั้นทุก request ถูกเด้งไปหน้า login ของ Vercel — Meta ไม่มีบัญชี จะ verify ไม่ผ่าน
+2. เปิดบัญชี Supabase → เอาสตริง **Transaction pooler** ใส่ `DATABASE_URL` → Redeploy
+3. เช็ก `/api/health` ต้องได้ `{"ok":true,"messages":0}`
+
+**ฝั่ง Meta**
+4. สร้าง App + เพิ่มแอดมินเพจเป็น role ใน App
+5. ผูก webhook + subscribe เพจที่รับแชทขายทุกเพจ (รวมเพจที่คนตอบล้วน ไว้เป็น baseline)
+
+**ฝั่งทีม**
+6. **ตกลงกติกา `/close <ยอด>` กับทีมแอดมินก่อนเริ่มเก็บ** ไม่งั้น conversion เป็น 0 ทุกเพจ
    ⚠️ ข้อความนี้ลูกค้าเห็นด้วย — ตัดสินใจก่อนประกาศใช้
-4. กรอก `mixhub.fbchat_pages` ว่าเพจไหนเปิด Business Agent ตั้งแต่วันไหน
+7. กรอก `mixhub.fbchat_pages` ว่าเพจไหนเปิด Business Agent ตั้งแต่วันไหน
+
+**ยังไม่ได้เขียน**
+8. **ตัวลบของเก่าในฐานพัก** ที่ sync เข้า mixhub แล้ว — ไม่มีตัวนี้ ฟรีเทียร์ ~500 MB จะเต็มใน ~3 เดือน
