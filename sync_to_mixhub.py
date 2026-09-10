@@ -3,7 +3,7 @@
 
 ⚠️ ตัวนี้รันบนเครื่อง mixhub (AI-000-D) ไม่ใช่บนเครื่องที่รัน server.js
    เพราะฐานของ mixhub อยู่ในวง LAN -- เซิร์ฟเวอร์ข้างนอกต่อเข้ามาตรง ๆ ไม่ได้
-   จึงต้องให้ฝั่งในเป็นคนไปดึง ผ่าน /export ที่มีโทเคนกั้น
+   จึงต้องให้ฝั่งในเป็นคนไปดึง ผ่าน /api/export ที่มีโทเคนกั้น
 
 ⚠️ ดึงซ้ำได้ไม่เสียหาย -- mid เป็น primary key และ referral/handover มี unique index
    ถ้าไฟล์จำตำแหน่ง (.sync_state.json) หาย ก็แค่ดึงใหม่ทั้งหมด ช้าแต่ไม่ผิด
@@ -59,16 +59,31 @@ def state():
 
 def fetch(since):
     q = urllib.parse.urlencode({"token": TOKEN, "since": since, "limit": 1000})
-    with urllib.request.urlopen(f"{BASE}/export?{q}", timeout=60) as r:
+    with urllib.request.urlopen(f"{BASE}/api/export?{q}", timeout=60) as r:
         return json.load(r)
 
 
 def js(v):
-    """raw ที่มาจาก /export เป็น jsonb -- ฝั่ง Postgres คืนมาเป็น dict ไม่ใช่สตริง
+    """raw ที่มาจาก /api/export เป็น jsonb -- ฝั่ง Postgres คืนมาเป็น dict ไม่ใช่สตริง
     ⚠️ ส่ง dict เข้า psycopg ตรง ๆ ไม่ได้ ("can't adapt type dict") ต้องแปลงเป็น JSON ก่อน"""
     if v is None:
         return "{}"
     return v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+
+
+def prune(cursors, keep_days):
+    """สั่ง chatlog ลบของเก่าที่ลงฐาน mixhub เรียบร้อยแล้ว
+
+    ⚠️ เรียกได้เฉพาะหลัง conn.commit() ผ่าน และเขียน .sync_state.json เสร็จแล้วเท่านั้น
+       ตำแหน่งที่ส่งไปต้องเป็น "ที่ลงฐานแล้วจริง" ไม่ใช่ "ที่ดึงมาได้"
+       ถ้า commit ล้มแล้วยังสั่งลบ = ข้อมูลหายถาวร Meta ไม่ให้ดึงแชทย้อนหลัง
+    """
+    body = json.dumps({"cursors": cursors, "keep_days": keep_days}).encode("utf-8")
+    q = urllib.parse.urlencode({"token": TOKEN})
+    req = urllib.request.Request(f"{BASE}/api/prune?{q}", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
 
 
 def ts(ms):
@@ -161,6 +176,19 @@ def main():
     }
     io.open(STATE, "w", encoding="utf-8").write(json.dumps(st))
     print(f"ลงฐาน mixhub แล้ว · ตำแหน่งล่าสุด {st}")
+
+    # ลบของเก่าในฐานพัก -- ต้องสั่งเอง ไม่ทำเงียบ ๆ เพราะเป็นการลบข้อมูล
+    if "--prune" in sys.argv:
+        keep = int(os.environ.get("CHATLOG_KEEP_DAYS") or 7)
+        try:
+            r = prune(st, keep)
+            d = r.get("deleted") or {}
+            print(f"ลบของเก่าเกิน {r.get('kept_days')} วันแล้ว · "
+                  f"ข้อความ {d.get('messages', 0)} · referral {d.get('referrals', 0)} · "
+                  f"ส่งต่อ {d.get('handovers', 0)}")
+        except Exception as e:
+            # ลบไม่สำเร็จไม่ใช่เรื่องคอขาดบาดตาย ข้อมูลลง mixhub ไปแล้ว
+            print(f"[เตือน] สั่งลบของเก่าไม่สำเร็จ (ข้อมูลลง mixhub แล้ว ไม่กระทบ): {e}")
     return 0
 
 

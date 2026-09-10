@@ -12,8 +12,10 @@ import http from "node:http";
 import webhook from "./api/webhook.js";
 import health from "./api/health.js";
 import exportH from "./api/export.js";
+import prune from "./api/prune.js";
 
-const routes = { "/api/webhook": webhook, "/api/health": health, "/api/export": exportH };
+const routes = { "/api/webhook": webhook, "/api/health": health,
+                 "/api/export": exportH, "/api/prune": prune };
 const PORT = Number(process.env.PORT || 3000);
 
 http.createServer(async (req, res) => {
