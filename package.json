@@ -1,0 +1,11 @@
+{
+  "name": "osuka-chatlog",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ดักแชทเพจ Facebook แยก AI ออกจากคน (Meta message_echoes)",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

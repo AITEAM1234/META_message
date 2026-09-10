@@ -1,0 +1,4 @@
+chatlog.db
+chatlog.db-*
+.env
+node_modules/
