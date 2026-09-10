@@ -51,6 +51,11 @@ deploy แล้วขึ้น `FUNCTION_INVOCATION_FAILED` ทันที เ
 
 **ถ้าใช้ Supabase** — Dashboard → ปุ่ม **Connect** → เลือกแท็บ **Transaction pooler**
 
+> ⚠️ **ตารางถูกสร้างใน schema `chatlog` ไม่ใช่ `public`** โดยตั้งใจ
+> Supabase เปิด REST API สาธารณะให้ schema `public` อัตโนมัติ (PostgREST) ตารางที่ไม่ได้ตั้ง RLS
+> จะอ่านได้ด้วย anon key ซึ่งเป็นคีย์ที่ออกแบบมาให้เปิดเผยอยู่แล้ว = ข้อความแชทลูกค้าหลุด
+> โดยไม่ต้องเจาะอะไรเลย · เปลี่ยนชื่อ schema ได้ด้วย env `DB_SCHEMA`
+
 > ⚠️ **ต้องใช้สตริงของ pooler (พอร์ต 6543) ไม่ใช่ Direct connection (5432)** เพราะ
 > 1. serverless เปิด connection ถี่มาก ต่อตรงจะเต็มโควตาเร็ว
 > 2. Direct connection ของแพลนฟรีเป็น **IPv6 อย่างเดียว** ซึ่ง Vercel ต่อไม่ได้
@@ -75,6 +80,7 @@ Project → Settings → Environment Variables (ใส่ให้ครบท�
 | `APP_SECRET` | Meta App → App settings → Basic → App Secret |
 | `EXPORT_TOKEN` | ตั้งเอง สุ่มยาว ๆ |
 | `DATABASE_URL` | connection string จาก Supabase (**Transaction pooler** พอร์ต 6543) หรือ Neon |
+| `DB_SCHEMA` | ไม่ใส่ก็ได้ — ค่าเริ่มต้น `chatlog` (อย่าตั้งเป็น `public`) |
 
 **ตั้ง env แล้วต้อง redeploy** ค่าใหม่ถึงจะมีผล
 
