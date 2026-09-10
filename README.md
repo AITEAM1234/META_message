@@ -3,88 +3,90 @@
 ตัวดักแชทเพจ Facebook เพื่อ **แยกว่าข้อความไหน Meta Business Agent ตอบ ข้อความไหนแอดมินตอบ**
 และรู้ว่าลูกค้าคลิกแอดตัวไหนเข้ามา
 
-ทำตามคู่มือ 23ADS ไฟล์ 01 · ต่อเข้ากับ `mixhub.fbchat_*` ที่มีอยู่แล้ว
+รันบน **Vercel** · เก็บลง **Postgres** · ต่อเข้า `mixhub.fbchat_*`
 
 ---
 
 ## ทำไมต้องมีตัวนี้
 
-Meta ส่งฟิลด์ 2 ตัวนี้มา **ทาง webhook ทางเดียว** ไม่มีใน API ที่ดึงย้อนหลังได้:
+Meta ส่ง 2 ฟิลด์นี้มา **ทาง webhook ทางเดียว** ไม่มีใน Conversations API ที่ดึงย้อนหลังได้:
 
 | ฟิลด์ | บอกอะไร |
 |---|---|
 | `message.ai_generated` | Business Agent เป็นคนตอบ |
 | `referral.ad_id` + `ad_title` | ลูกค้าคลิกแอดตัวไหนเข้ามา |
 
-**ข้อมูลเริ่มนับตั้งแต่วันที่ตัวนี้เริ่มทำงาน** ย้อนหลังเก็บไม่ได้เลย
+**ข้อมูลเริ่มนับตั้งแต่วันที่ deploy** ย้อนหลังเก็บไม่ได้เลย — ยิ่งช้าวันไหน ข้อมูลวันนั้นหายถาวร
 
 ---
 
-## ไฟล์ในโปรเจกต์
+## โครงไฟล์
 
-| ไฟล์ | รันที่ไหน | ทำอะไร |
-|---|---|---|
-| `server.js` | เครื่องที่มี HTTPS สาธารณะ | รับ webhook จาก Meta เก็บลง SQLite |
-| `sync_to_mixhub.py` | **เครื่อง mixhub (AI-000-D)** | ดึงจาก `/export` เข้า `mixhub.fbchat_*` |
+```
+api/webhook.js      ← Meta ยิงเข้าตรงนี้
+api/health.js       ← เช็กว่าต่อฐานได้และเก็บได้กี่แถว
+api/export.js       ← ให้ mixhub ดึงข้อมูล (ต้องมีโทเคน)
+lib/store.js        ← ตรรกะกลาง: แยก actor · กลบ PII · เขียนฐาน
+server.js           ← ตัวรันในเครื่องไว้ทดสอบ (Vercel ไม่ใช้ไฟล์นี้)
+sync_to_mixhub.py   ← รันบนเครื่อง mixhub ดึงเข้า fbchat_*
+```
 
-**ไม่มี dependency เลยสักตัว** — ใช้ `node:sqlite` ที่มีใน Node 22+ ก๊อปไปวางแล้วรันได้เลย
-(คู่มือใช้ `express` + `better-sqlite3` ซึ่งตัวหลังต้อง build native พังบ่อยบน Windows/VPS เปล่า)
+### ⚠️ ทำไมใช้ Postgres ไม่ใช่ SQLite อย่างในคู่มือ 23ADS
+
+Vercel เป็น serverless — **ดิสก์เป็นของชั่วคราว ลบทิ้งทุกครั้งที่ฟังก์ชันจบ**
+ถ้าใช้ SQLite เขียนไฟล์ จะเจออาการที่แย่ที่สุด: verify ผ่าน · Meta บอกว่าเชื่อมสำเร็จ ·
+แต่ข้อความหายทุกข้อความแบบเงียบ ๆ ไปรู้ตัวอีกทีตอนเปิดรายงานแล้วว่างเปล่าอีกเดือนถัดมา
+
+และ **ห้ามใช้ `http.createServer().listen()`** — เวอร์ชันแรกของไฟล์นี้ทำแบบนั้น
+deploy แล้วขึ้น `FUNCTION_INVOCATION_FAILED` ทันที เพราะ serverless ไม่ให้เปิดพอร์ตค้าง
 
 ---
 
-## รันยังไง
+## Deploy ขึ้น Vercel
 
-```bash
-node -v          # ต้อง >= 22
-cp .env.example .env    # แล้วเติมค่า
-node server.js
-```
+### 1. เตรียม Postgres
 
-Windows PowerShell:
-```powershell
-$env:VERIFY_TOKEN="osuka-2026"; $env:APP_SECRET="..."; $env:EXPORT_TOKEN="..."; node server.js
-```
+ใช้ **Neon** (ฟรี) หรือ Supabase / Vercel Postgres — แชทเป็นข้อความล้วน วันละไม่กี่พันแถว
+ฟรีเทียร์เหลือเฟือ **ไม่ต้องกังวลเรื่องขนาดเหมือนไฟล์รูปในระบบหลัก**
 
-บน VPS ให้รันค้างด้วย pm2:
-```bash
-pm2 start server.js --name chatlog && pm2 save
-```
+ตารางสร้างเองอัตโนมัติตอนเรียกครั้งแรก ไม่ต้องรัน SQL มือ
 
-### ค่าที่ต้องตั้ง
+### 2. ตั้ง Environment Variables ใน Vercel
 
-| | เอามาจากไหน |
+Project → Settings → Environment Variables (ใส่ให้ครบทั้ง **Production** และ **Preview**)
+
+| ตัวแปร | เอามาจากไหน |
 |---|---|
-| `VERIFY_TOKEN` | ตั้งเอง ต้องใส่ค่าเดียวกันตอนผูก webhook ใน App Dashboard |
+| `VERIFY_TOKEN` | ตั้งเอง — ต้องใส่ค่าเดียวกันตอนผูก webhook |
 | `APP_SECRET` | Meta App → App settings → Basic → App Secret |
-| `EXPORT_TOKEN` | ตั้งเอง สุ่มยาว ๆ — โทเคนให้ mixhub ดึงข้อมูล |
+| `EXPORT_TOKEN` | ตั้งเอง สุ่มยาว ๆ |
+| `DATABASE_URL` | connection string จาก Neon (`?sslmode=require`) |
+
+**ตั้ง env แล้วต้อง redeploy** ค่าใหม่ถึงจะมีผล
+
+### 3. เช็กว่าติดจริง
+
+```
+https://<โปรเจกต์>.vercel.app/api/health
+```
+ต้องได้ `{"ok":true,"messages":0,...}` — ถ้าขึ้น error แปลว่า `DATABASE_URL` ผิด
 
 ---
 
-## ปลายทางที่เปิดไว้
+## ตั้งค่าฝั่ง Meta
 
-| | ใครเรียก | ทำอะไร |
-|---|---|---|
-| `GET /webhook` | Meta | ตอบ verify challenge ตอนกด Verify ใน Dashboard |
-| `POST /webhook` | Meta | รับ event (ตรวจลายเซ็นก่อนเสมอ) |
-| `GET /health` | คน | ดูว่ายังมีชีวิต เก็บได้กี่แถว แยกตาม actor |
-| `GET /export?token=…&since=…` | mixhub | ดึงข้อมูลไปวิเคราะห์ |
-
----
-
-## ตั้งค่าฝั่ง Meta (สรุปจากคู่มือ Step 1-4)
-
-1. **สร้าง App** ที่ developers.facebook.com → type **Business** → Add Product → **Messenger**
+1. **สร้าง App** — developers.facebook.com → type **Business** → Add Product → **Messenger**
    **App Roles → เพิ่มแอดมินเพจทุกคนเป็น Admin/Developer** ← ไม่ทำ = เพจนั้นไม่ส่ง event มา
 2. **ผูก webhook** — Messenger → Settings → Webhooks → object `Page`
-   Callback URL = `https://<โดเมน>/webhook` · Verify token = `VERIFY_TOKEN`
-   ติ๊ก 4 field: `messages` · `message_echoes` · `messaging_referrals` · `messaging_postbacks`
+   - Callback URL = `https://<โปรเจกต์>.vercel.app/api/webhook`
+   - Verify token = ค่า `VERIFY_TOKEN`
+   - ติ๊ก 4 field: `messages` · `message_echoes` · `messaging_referrals` · `messaging_postbacks`
 3. **subscribe ทีละเพจ**
    ```bash
    curl -X POST "https://graph.facebook.com/v25.0/<PAGE_ID>/subscribed_apps" \
      -d "subscribed_fields=messages,message_echoes,messaging_referrals,messaging_postbacks" \
      -d "access_token=<PAGE_ACCESS_TOKEN>"
    ```
-4. **เช็ก** — `curl "https://graph.facebook.com/v25.0/<PAGE_ID>/subscribed_apps?access_token=..."`
 
 > **App อยู่ใน Development mode ใช้ได้ ไม่ต้องขอ App Review**
 > **Page token หมดอายุไม่กระทบ** — subscribe ครั้งเดียวแล้วทำงานต่อเอง
@@ -93,13 +95,26 @@ pm2 start server.js --name chatlog && pm2 save
 
 ## ดึงเข้า mixhub
 
-รันบนเครื่อง AI-000-D:
+รันบนเครื่อง AI-000-D (ฐาน mixhub อยู่ในวง LAN เซิร์ฟเวอร์ข้างนอกต่อเข้ามาไม่ได้ ต้องให้ฝั่งในไปดึง):
+
 ```powershell
-$env:CHATLOG_URL="https://<โดเมน>"; $env:CHATLOG_TOKEN="<EXPORT_TOKEN>"; py -3 sync_to_mixhub.py
+$env:CHATLOG_URL="https://<โปรเจกต์>.vercel.app/api"
+$env:CHATLOG_TOKEN="<EXPORT_TOKEN>"
+py -3 sync_to_mixhub.py
 ```
 
-ดึงซ้ำได้ไม่เสียหาย (`mid` เป็น primary key) · จำตำแหน่งไว้ใน `.sync_state.json`
-ตั้งเป็น Task Scheduler รายวันได้ แล้ว routine `osuka-chat-daily` 09:00 จะมีข้อมูลอ่าน
+ดึงซ้ำได้ไม่เสียหาย (`mid` เป็น unique) · จำตำแหน่งใน `.sync_state.json`
+ตั้งเป็น Task Scheduler รายวัน แล้ว routine `osuka-chat-daily` 09:00 จะมีข้อมูลอ่าน
+
+---
+
+## รันในเครื่องเพื่อทดสอบ
+
+```bash
+npm install
+node --env-file=env server.js       # ต้องมีไฟล์ env ที่มี DATABASE_URL
+# แล้วเปิด http://127.0.0.1:3000/api/health
+```
 
 ---
 
@@ -114,8 +129,8 @@ $env:CHATLOG_URL="https://<โดเมน>"; $env:CHATLOG_TOKEN="<EXPORT_TOKEN>
 | `bot` | echo + app_id อื่น | ผิดปกติ ต้องแจ้งคน |
 
 > ⚠️ **Business Agent กับแอดมินใช้ `app_id` เดียวกัน** (`263902037430900`)
-> ตัวชี้ขาดคือ `ai_generated` เท่านั้น — ถ้าแยกด้วย "มี app_id ไหม" จะนับคนเป็น AI ทุกข้อความ
-> โดยไม่มีอะไรฟ้อง แล้วรายงานผิดทั้งฉบับ
+> ตัวชี้ขาดคือ `ai_generated` เท่านั้น — ถ้าแยกด้วย "มี app_id ไหม" จะนับคนเป็น AI
+> ทุกข้อความโดยไม่มีอะไรฟ้อง แล้วรายงานผิดทั้งฉบับ
 
 ---
 
@@ -134,9 +149,18 @@ $env:CHATLOG_URL="https://<โดเมน>"; $env:CHATLOG_TOKEN="<EXPORT_TOKEN>
 
 ---
 
+## ⚠️ ความลับ
+
+`.gitignore` กัน `env` (ไม่มีจุด) · `.env` · `.env.*` ไว้แล้ว
+**เคยเกือบหลุดมาแล้ว** เพราะเวอร์ชันแรกกันแค่ `.env` แต่มีเครื่องมือสร้างไฟล์ชื่อ `env`
+ที่มี `APP_SECRET` ตัวจริงอยู่ — ถ้าเพิ่มไฟล์ตั้งค่าใหม่ ตรวจ `git status` ทุกครั้งก่อน commit
+
+---
+
 ## ทดสอบแล้วว่าอะไรใช้ได้ (10 ก.ย. 69)
 
-ยิง payload จำลอง 8 event ตามรูปแบบจริงในคู่มือ:
+ยิง payload จำลอง 8 event ตามรูปแบบจริงในคู่มือ เข้า handler ชุดเดียวกับที่ deploy
+โดยต่อ Postgres จริง:
 
 ```
 verify challenge        200 + คืน challenge
@@ -146,7 +170,7 @@ verify challenge        200 + คืน challenge
 by_actor: ai 1 · human 2 · customer 3 · system 1
   → AI กับคนใช้ app_id เดียวกัน แต่แยกออกได้
   → Crmixer "/close 99999" ไม่ถูกนับเป็นยอดขาย
-  → "/close 1,290.50" ของจริงเข้า close_amount = 1290.5
+  → "/close 1,290.50" ของจริงเข้า close_amount = 1290.50
   → "โทรกลับ 081-234-5678" → "โทรกลับ [เบอร์]"
   → ad_title "BOF-0001 | [VDO30] | ..." เก็บครบ
   → pass_thread_control เก็บได้
@@ -156,14 +180,15 @@ sync เข้า mixhub → daily.py รายงาน:
   คนใช้เวลารับต่อ 10.0 นาที (ตรงกับที่จำลอง)
 ```
 
-**ยังไม่ได้ทดสอบกับ Meta จริง** — ต้องมี HTTPS สาธารณะก่อน
+**ยังไม่ได้ทดสอบกับ Meta จริง** — ต้อง deploy แล้วผูก webhook ก่อน
+สิ่งที่ต้องดูรอบแรก: `/api/health` ต้องขึ้น `messages` เพิ่มขึ้นจริงหลังมีคนทักเพจ
 
 ---
 
 ## ที่ยังต้องทำ
 
-1. หาที่รันที่มี HTTPS สาธารณะ (VPS เล็ก / Vercel+ฐานคลาวด์ / tunnel จากเครื่องตัวเอง)
+1. เปิดบัญชี Neon → เอา `DATABASE_URL` ใส่ Vercel → redeploy → เช็ก `/api/health`
 2. สร้าง Meta App + ผูก webhook + subscribe เพจ
 3. **ตกลงกติกา `/close <ยอด>` กับทีมแอดมินก่อนเริ่มเก็บ** ไม่งั้น conversion เป็น 0 ทุกเพจ
    ⚠️ ข้อความนี้ลูกค้าเห็นด้วย — ตัดสินใจก่อนประกาศใช้
-4. กรอก `mixhub.fbchat_pages` ว่าเพจไหนเปิด Business Agent ตั้งแต่วันไหน (`chat_system`, `agent_on_since`)
+4. กรอก `mixhub.fbchat_pages` ว่าเพจไหนเปิด Business Agent ตั้งแต่วันไหน

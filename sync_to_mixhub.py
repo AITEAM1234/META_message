@@ -63,6 +63,14 @@ def fetch(since):
         return json.load(r)
 
 
+def js(v):
+    """raw ที่มาจาก /export เป็น jsonb -- ฝั่ง Postgres คืนมาเป็น dict ไม่ใช่สตริง
+    ⚠️ ส่ง dict เข้า psycopg ตรง ๆ ไม่ได้ ("can't adapt type dict") ต้องแปลงเป็น JSON ก่อน"""
+    if v is None:
+        return "{}"
+    return v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+
+
 def ts(ms):
     """ms epoch -> ISO ให้ Postgres อ่านเป็น timestamptz"""
     from datetime import datetime, timezone
@@ -75,7 +83,7 @@ def main():
 
     st = state()
     # ใช้ cursor ต่ำสุดของสามชนิด -- ดึงเกินมาบ้างไม่เป็นไร เพราะ insert กันซ้ำอยู่แล้ว
-    since = min(st.get("messages", 0), st.get("referrals", 0), st.get("handovers", 0))
+    since = min(int(st.get("messages", 0)), int(st.get("referrals", 0)), int(st.get("handovers", 0)))
     data = fetch(since)
     msgs, refs, hands = data["messages"], data["referrals"], data["handovers"]
     print(f"ดึงมาได้ ข้อความ {len(msgs)} · referral {len(refs)} · ส่งต่อ {len(hands)}")
@@ -105,7 +113,7 @@ def main():
                 (m["mid"], tid, m["page_id"], m["direction"], m["actor"],
                  m.get("app_id") or "", bool(m.get("ai_generated")),
                  (m.get("metadata") or "")[:500], ts(m["ts"]),
-                 m.get("text_masked") or "", m.get("raw") or "{}"))
+                 m.get("text_masked") or "", js(m.get("raw"))))
 
             # /close -- ฝั่ง chatlog แกะยอดให้แล้ว ไม่ต้องมาแกะข้อความซ้ำ
             if m.get("has_close"):
@@ -125,7 +133,7 @@ def main():
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (thread_id, mid, ad_id) DO NOTHING""",
                 (tid, r.get("mid") or "", r.get("ad_id") or "", r.get("ad_title") or "",
-                 r.get("ref") or "", r.get("source") or "", ts(r["ts"]), r.get("raw") or "{}"))
+                 r.get("ref") or "", r.get("source") or "", ts(r["ts"]), js(r.get("raw"))))
             if r.get("ad_id"):
                 cur.execute(
                     """UPDATE mixhub.fbchat_threads SET first_ad_id = %s
@@ -140,13 +148,16 @@ def main():
                    VALUES (%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (thread_id, event, happened_at) DO NOTHING""",
                 (tid, h["page_id"], h["event"], h.get("app_id") or "",
-                 (h.get("metadata") or "")[:500], ts(h["ts"]), h.get("raw") or "{}"))
+                 (h.get("metadata") or "")[:500], ts(h["ts"]), js(h.get("raw"))))
         conn.commit()
 
+    # ⚠️ cursor มาจาก bigserial ซึ่ง Postgres ส่งเป็นสตริงทาง JSON ("7" ไม่ใช่ 7)
+    #    ถ้าเก็บเป็นสตริง พอถึงแถวที่ 10 การเทียบจะกลายเป็นแบบตัวอักษร ("10" < "7")
+    #    แล้ว min() รอบหน้าจะได้ตำแหน่งผิด ดึงซ้ำทั้งกองโดยไม่มีอะไรฟ้อง -- บังคับเป็น int
     st = {
-        "messages":  max([m["cursor"] for m in msgs], default=st.get("messages", 0)),
-        "referrals": max([r["cursor"] for r in refs], default=st.get("referrals", 0)),
-        "handovers": max([h["cursor"] for h in hands], default=st.get("handovers", 0)),
+        "messages":  max([int(m["cursor"]) for m in msgs],  default=int(st.get("messages", 0))),
+        "referrals": max([int(r["cursor"]) for r in refs],  default=int(st.get("referrals", 0))),
+        "handovers": max([int(h["cursor"]) for h in hands], default=int(st.get("handovers", 0))),
     }
     io.open(STATE, "w", encoding="utf-8").write(json.dumps(st))
     print(f"ลงฐาน mixhub แล้ว · ตำแหน่งล่าสุด {st}")

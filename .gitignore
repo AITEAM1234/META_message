@@ -1,4 +1,13 @@
+# ความลับ -- ห้ามขึ้น GitHub เด็ดขาด
+# ⚠️ ต้องกัน "env" ที่ไม่มีจุดนำหน้าด้วย เครื่องมือบางตัวสร้างชื่อนี้
+#    และเคยเกือบหลุดมาแล้ว (10 ก.ย. 69) เพราะ .gitignore เดิมกันแค่ .env
+env
+.env
+.env.*
+!.env.example
+
 chatlog.db
 chatlog.db-*
-.env
 node_modules/
+.vercel/
+.sync_state.json
