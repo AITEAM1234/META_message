@@ -7,6 +7,27 @@
 
 ---
 
+## ที่อยู่จริง (11 ก.ย. 69)
+
+```
+https://meta-message-seven.vercel.app
+```
+
+| ตรวจแล้วว่าใช้ได้ | ผล |
+|---|---|
+| `/api/health` | `{"ok":true,"messages":0}` — ต่อ Supabase ติดจาก Vercel |
+| Meta กด Verify (โทเคนถูก) | 200 คืน challenge กลับเป๊ะ |
+| Meta กด Verify (โทเคนผิด) | 403 |
+| `/api/export` ไม่มีโทเคน / มีโทเคน | 401 / 200 |
+| Deployment Protection | ปิดแล้ว (ไม่มี 302 ไป sso-api) |
+
+`/` ขึ้น `not found` เป็นเรื่องปกติ — โปรเจกต์นี้ไม่มีหน้าเว็บ มีแต่ `/api/*`
+
+ฐาน Supabase อยู่ที่ `aws-0-ap-southeast-2` ใช้ **Transaction pooler (6543)**
+ทดสอบแล้วว่า INSERT แบบมีพารามิเตอร์ผ่าน pooler ได้ และ mid ซ้ำโดนกันจริง
+
+---
+
 ## ทำไมต้องมีตัวนี้
 
 Meta ส่ง 2 ฟิลด์นี้มา **ทาง webhook ทางเดียว** ไม่มีใน Conversations API ที่ดึงย้อนหลังได้:
@@ -87,7 +108,7 @@ Project → Settings → Environment Variables (ใส่ให้ครบท�
 ### 3. เช็กว่าติดจริง
 
 ```
-https://<โปรเจกต์>.vercel.app/api/health
+https://meta-message-seven.vercel.app/api/health
 ```
 ต้องได้ `{"ok":true,"messages":0,...}` — ถ้าขึ้น error แปลว่า `DATABASE_URL` ผิด
 
@@ -98,7 +119,7 @@ https://<โปรเจกต์>.vercel.app/api/health
 1. **สร้าง App** — developers.facebook.com → type **Business** → Add Product → **Messenger**
    **App Roles → เพิ่มแอดมินเพจทุกคนเป็น Admin/Developer** ← ไม่ทำ = เพจนั้นไม่ส่ง event มา
 2. **ผูก webhook** — Messenger → Settings → Webhooks → object `Page`
-   - Callback URL = `https://<โปรเจกต์>.vercel.app/api/webhook`
+   - Callback URL = `https://meta-message-seven.vercel.app/api/webhook`
    - Verify token = ค่า `VERIFY_TOKEN`
    - ติ๊ก 4 field: `messages` · `message_echoes` · `messaging_referrals` · `messaging_postbacks`
 3. **subscribe ทีละเพจ**
@@ -118,7 +139,7 @@ https://<โปรเจกต์>.vercel.app/api/health
 รันบนเครื่อง AI-000-D (ฐาน mixhub อยู่ในวง LAN เซิร์ฟเวอร์ข้างนอกต่อเข้ามาไม่ได้ ต้องให้ฝั่งในไปดึง):
 
 ```powershell
-$env:CHATLOG_URL="https://<โปรเจกต์>.vercel.app"   # โดเมนเปล่า ๆ ไม่ต้องมี /api
+$env:CHATLOG_URL="https://meta-message-seven.vercel.app"   # โดเมนเปล่า ๆ ไม่ต้องมี /api
 # (สคริปต์เติม /api/export กับ /api/prune ให้เอง)
 $env:CHATLOG_TOKEN="<EXPORT_TOKEN>"
 py -3 sync_to_mixhub.py
