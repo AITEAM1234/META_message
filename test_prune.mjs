@@ -103,6 +103,26 @@ for (const bad of ["abc", -5, 1.5, null, NaN]) {
 }
 check("ค่าขยะทุกแบบไม่ลบอะไร", (await count("messages")) === 1);
 
+
+console.log("\n-- หน่วยเวลา: วินาที ต้องถูกแปลงเป็นมิลลิวินาที --");
+{
+  const { ingest } = await import("./lib/store.js");
+  await reset();
+  await ingest({ object: "page", entry: [{ id: "P1", time: 1, messaging: [
+    { sender: { id: "U1" }, recipient: { id: "P1" }, timestamp: "1527459824",
+      message: { mid: "__sec__", text: "hi" } }]}]});
+  const r = await db().query(`SELECT ts FROM ${SCHEMA}.messages WHERE mid = '__sec__'`);
+  const y = new Date(Number(r.rows[0].ts)).getUTCFullYear();
+  check("วินาที 1527459824 -> ปี 2018 ไม่ใช่ 1970", y === 2018, `ได้ปี ${y}`);
+
+  await ingest({ object: "page", entry: [{ id: "P1", time: 1, messaging: [
+    { sender: { id: "U1" }, recipient: { id: "P1" }, timestamp: 1789000000000,
+      message: { mid: "__ms__", text: "hi" } }]}]});
+  const r2 = await db().query(`SELECT ts FROM ${SCHEMA}.messages WHERE mid = '__ms__'`);
+  check("มิลลิวินาทีของจริงไม่โดนคูณซ้ำ", Number(r2.rows[0].ts) === 1789000000000,
+        `ได้ ${r2.rows[0].ts}`);
+}
+
 await db().query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
 await db().end();
 
