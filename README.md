@@ -118,7 +118,8 @@ https://<โปรเจกต์>.vercel.app/api/health
 รันบนเครื่อง AI-000-D (ฐาน mixhub อยู่ในวง LAN เซิร์ฟเวอร์ข้างนอกต่อเข้ามาไม่ได้ ต้องให้ฝั่งในไปดึง):
 
 ```powershell
-$env:CHATLOG_URL="https://<โปรเจกต์>.vercel.app/api"
+$env:CHATLOG_URL="https://<โปรเจกต์>.vercel.app"   # โดเมนเปล่า ๆ ไม่ต้องมี /api
+# (สคริปต์เติม /api/export กับ /api/prune ให้เอง)
 $env:CHATLOG_TOKEN="<EXPORT_TOKEN>"
 py -3 sync_to_mixhub.py
 ```
