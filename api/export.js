@@ -9,7 +9,9 @@ export default async function handler(req, res) {
   try {
     const since = Number(u.searchParams.get("since") || 0);
     const limit = Math.min(Number(u.searchParams.get("limit") || 1000), 5000);
-    const out = await exportRows(since, limit);
+    /* since_raw แยกจาก since -- raw_events นับ seq ของตัวเอง */
+    const sinceRaw = Number(u.searchParams.get("since_raw") || 0);
+    const out = await exportRows(since, limit, sinceRaw);
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.statusCode = 200;
     res.end(JSON.stringify(out));

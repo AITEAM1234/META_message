@@ -54,11 +54,12 @@ def state():
     try:
         return json.load(io.open(STATE, encoding="utf-8"))
     except Exception:
-        return {"messages": 0, "referrals": 0, "handovers": 0}
+        return {"messages": 0, "referrals": 0, "handovers": 0, "raw_events": 0}
 
 
-def fetch(since):
-    q = urllib.parse.urlencode({"token": TOKEN, "since": since, "limit": 1000})
+def fetch(since, since_raw):
+    # ⚠️ raw_events ส่ง cursor แยก (since_raw) -- seq คนละลำดับกับตารางอื่น
+    q = urllib.parse.urlencode({"token": TOKEN, "since": since, "since_raw": since_raw, "limit": 1000})
     with urllib.request.urlopen(f"{BASE}/api/export?{q}", timeout=60) as r:
         return json.load(r)
 
@@ -99,15 +100,27 @@ def main():
     st = state()
     # ใช้ cursor ต่ำสุดของสามชนิด -- ดึงเกินมาบ้างไม่เป็นไร เพราะ insert กันซ้ำอยู่แล้ว
     since = min(int(st.get("messages", 0)), int(st.get("referrals", 0)), int(st.get("handovers", 0)))
-    data = fetch(since)
+    data = fetch(since, int(st.get("raw_events", 0)))
     msgs, refs, hands = data["messages"], data["referrals"], data["handovers"]
-    print(f"ดึงมาได้ ข้อความ {len(msgs)} · referral {len(refs)} · ส่งต่อ {len(hands)}")
+    # Vercel รุ่นเก่ายังไม่มี raw_events -- ไม่มีคีย์ก็ถือว่าว่าง ไม่ใช่พัง
+    raws = data.get("raw_events") or []
+    print(f"ดึงมาได้ ก้อนดิบ {len(raws)} · ข้อความ {len(msgs)} · referral {len(refs)} · ส่งต่อ {len(hands)}")
 
-    if not (msgs or refs or hands):
+    if not (msgs or refs or hands or raws):
         print("ไม่มีอะไรใหม่")
         return 0
 
     with db() as conn, conn.cursor() as cur:
+        # ก้อนดิบก่อน -- นี่คือของตัวจริง ตารางข้างล่างเป็นแค่ที่ Vercel แยกไว้ให้
+        for w in raws:
+            cur.execute(
+                """INSERT INTO mixhub.fbchat_raw_events
+                       (seq, body_sha, received_at, object, page_ids, event_count, raw)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (body_sha) DO NOTHING""",
+                (int(w["cursor"]), w["body_sha"], ts(w["received_at"]), w.get("object") or "",
+                 list(w.get("page_ids") or []), int(w.get("event_count") or 0), js(w.get("raw"))))
+
         for m in msgs:
             tid = f"{m['page_id']}:{m['psid']}"
             cur.execute(
@@ -179,6 +192,7 @@ def main():
         "messages":  max([int(m["cursor"]) for m in msgs],  default=int(st.get("messages", 0))),
         "referrals": max([int(r["cursor"]) for r in refs],  default=int(st.get("referrals", 0))),
         "handovers": max([int(h["cursor"]) for h in hands], default=int(st.get("handovers", 0))),
+        "raw_events": max([int(w["cursor"]) for w in raws], default=int(st.get("raw_events", 0))),
     }
     io.open(STATE, "w", encoding="utf-8").write(json.dumps(st))
     print(f"ลงฐาน mixhub แล้ว · ตำแหน่งล่าสุด {st}")
@@ -190,6 +204,7 @@ def main():
             r = prune(st, keep)
             d = r.get("deleted") or {}
             print(f"ลบของเก่าเกิน {r.get('kept_days')} วันแล้ว · "
+                  f"ก้อนดิบ {d.get('raw_events', 0)} · "
                   f"ข้อความ {d.get('messages', 0)} · referral {d.get('referrals', 0)} · "
                   f"ส่งต่อ {d.get('handovers', 0)}")
         except Exception as e:

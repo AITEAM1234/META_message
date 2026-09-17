@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { ingest } from "../lib/store.js";
+import { ingest, saveRaw } from "../lib/store.js";
 
 /**
  * ⚠️ ต้องปิด body parser ของ Vercel
@@ -51,20 +51,33 @@ export default async function handler(req, res) {
   try { payload = JSON.parse(body.toString("utf8")); }
   catch { res.statusCode = 400; return res.end("bad json"); }
 
-  if (payload.object !== "page") { res.statusCode = 200; return res.end("ignored"); }
-
   /* ⚠️ serverless ต่างจากเซิร์ฟเวอร์ปกติ — ตอบ 200 ก่อนแล้วค่อยทำงานต่อ "ไม่ได้"
      เพราะ Vercel หยุดฟังก์ชันทันทีที่ response จบ งานที่ค้างจะถูกตัดกลางคัน
-     จึงต้องเขียนลงฐานให้เสร็จก่อนแล้วค่อยตอบ — Meta ให้เวลาราว 20 วินาที พอ
-     ถ้าเกินแล้วโดนยิงซ้ำก็ไม่เสียหาย เพราะ mid เป็น unique */
+     จึงต้องเขียนลงฐานให้เสร็จก่อนแล้วค่อยตอบ — Meta ให้เวลาราว 20 วินาที พอ */
+
+  /* 1) เก็บดิบทั้งก้อนก่อนเสมอ -- ทุก object ทุก event ไม่คัดทิ้ง (17 ก.ย. 69)
+        นี่คือที่เก็บตัวจริง ล้มเมื่อไหร่ต้องตอบ 500 ให้ Meta ยิงซ้ำ ไม่งั้นหายถาวร
+        ยิงซ้ำก้อนเดิมไม่เก็บสองแถว เพราะกันซ้ำด้วย sha ของไบต์ดิบ */
+  try {
+    await saveRaw(body, payload);
+  } catch (e) {
+    console.error("[เก็บข้อมูลดิบไม่สำเร็จ]", e.message);
+    res.statusCode = 500;
+    return res.end("store failed");
+  }
+
+  if (payload.object !== "page") { res.statusCode = 200; return res.end("raw only"); }
+
+  /* 2) แยกลงตารางสำเร็จรูป -- ไว้ให้ /api/health นับเร็ว ๆ เท่านั้น
+        ⚠️ แยกพลาดตอบ 200 ได้ เพราะก้อนดิบลงฐานแล้ว Mixhub แยกเองจาก raw_events ได้
+           ตอบ 500 ตรงนี้ Meta จะยิงก้อนเดิมซ้ำไม่จบ ทั้งที่ข้อมูลไม่ได้หาย */
   try {
     const n = await ingest(payload);
     res.statusCode = 200;
     return res.end(`OK ${n}`);
   } catch (e) {
-    console.error("[เก็บลงฐานไม่สำเร็จ]", e.message);
-    /* ตอบ 500 ให้ Meta ยิงซ้ำ ดีกว่าตอบ 200 แล้วข้อมูลหายถาวร */
-    res.statusCode = 500;
-    return res.end("store failed");
+    console.error("[แยกข้อมูลไม่สำเร็จ ก้อนดิบเก็บแล้ว]", e.message);
+    res.statusCode = 200;
+    return res.end("raw saved");
   }
 }
