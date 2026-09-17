@@ -123,9 +123,15 @@ def main():
                 """INSERT INTO mixhub.fbchat_messages
                        (mid, thread_id, page_id, direction, actor, app_id, ai_generated,
                         metadata, sent_at, text_content, raw_payload)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   VALUES (%s,%s,%s,%s,
+                           mixhub.fbchat_actor(%s, %s, %s, %s::jsonb),
+                           %s,%s,%s,%s,%s,%s)
                    ON CONFLICT (mid) DO NOTHING""",
-                (m["mid"], tid, m["page_id"], m["direction"], m["actor"],
+                # ⚠️ เก็บดิบ ตัดสินทีหลัง: ไม่ลอกป้าย m["actor"] ที่ Vercel ตัดสินไว้
+                #    ให้ Mixhub ตัดสินจาก raw + ตาราง fbchat_apps ที่คนแก้ได้ แก้ตารางแล้ว
+                #    แถวเก่าตามได้ด้วย fbchat_reclassify() (migration 2026_09_17_120000 ใน repo Mixhub)
+                (m["mid"], tid, m["page_id"], m["direction"],
+                 m["direction"], m.get("app_id") or "", bool(m.get("ai_generated")), js(m.get("raw")),
                  m.get("app_id") or "", bool(m.get("ai_generated")),
                  (m.get("metadata") or "")[:500], ts(m["ts"]),
                  m.get("text_masked") or "", js(m.get("raw"))))
