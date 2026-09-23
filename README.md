@@ -154,7 +154,9 @@ https://meta-message-seven.vercel.app/api/health
 ⚠️ **ห้ามเขียนลง `raw_events`** -- ตารางนั้นคือก้อนตามที่ Meta ส่งมาเป๊ะ (`sync_to_mixhub` ใช้ `seq` เป็น cursor)
 ⚠️ **ยิง Graph ขนานเสมอ** -- ไล่ทีละเพจใช้ ~20 วิ เกินเวลาที่ Vercel ให้ฟังก์ชันรัน (ขนานแล้วเหลือ ~5 วิ)
 ⚠️ **แทรกฐานทีละแถวไม่ไหว** -- Supabase pooler แถวละ ~0.4 วิ ต้องรวมเป็น INSERT เดียวต่อห้อง
-⚠️ `schedule` ในไฟล์ตั้งไว้ทุก 5 นาที -- **แพลน Hobby ของ Vercel รัน cron ได้วันละครั้ง** ถ้ายังไม่ใช่ Pro
+⚠️ `schedule` ตั้งไว้ **วันละครั้ง (08:00 ไทย)** -- แพลน Hobby บังคับ ถี่กว่านี้ **deploy ไม่ผ่านทั้ง deployment**
+   (ของจริง 23 ก.ย. 69: ใส่ `*/5 * * * *` แล้ว API ตอบ `cron_jobs_limits_reached` -- production ค้างอยู่ที่ commit เก่า 6 วันโดยไม่มีใครรู้)
+   อัปเป็น Pro แล้วแก้กลับเป็น `*/5 * * * *` ได้
    ตัวในเครื่อง (`chat_gapfill.py` + Task `MixhubChatAlert`) ยังทำงานคู่กันอยู่ ไม่ได้ทิ้ง
 
 ## ดึงเข้า mixhub
