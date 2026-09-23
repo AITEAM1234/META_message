@@ -1,9 +1,11 @@
 /**
  * ตัวรันในเครื่อง — ใช้ทดสอบก่อน deploy เท่านั้น
  *
- * ⚠️ บน Vercel ไฟล์นี้ไม่ถูกใช้เลย Vercel เรียก api/*.js โดยตรง
- *    (ของเดิมที่เปิดพอร์ตค้างด้วย listen() คือสาเหตุที่ deploy แล้วขึ้น
- *     FUNCTION_INVOCATION_FAILED -- serverless ไม่ให้เปิดพอร์ตค้าง)
+ * ⚠️ **แก้ความเข้าใจผิด 23 ก.ย. 69: บน Vercel ไฟล์นี้ถูกใช้จริง**
+ *    Build log เขียนว่า "Build complete -- Using server.js as the root entrypoint"
+ *    แปลว่า Vercel รันไฟล์นี้เป็นเซิร์ฟเวอร์ ไม่ได้เรียก api/*.js เป็นฟังก์ชันแยกตามชื่อไฟล์
+ *    => **เพิ่มไฟล์ใน api/ อย่างเดียวไม่พอ ต้องลงทะเบียนในตาราง routes ข้างล่างด้วย**
+ *    (ของจริง: เพิ่ม api/backfill.js แล้ว deploy ไป ยิงเข้าไปได้ 404 "not found" จากบรรทัดในไฟล์นี้เอง)
  *
  * ใช้:  node --env-file=env server.js      แล้วเปิด http://127.0.0.1:3000/api/health
  */
@@ -13,9 +15,11 @@ import webhook from "./api/webhook.js";
 import health from "./api/health.js";
 import exportH from "./api/export.js";
 import prune from "./api/prune.js";
+import backfill from "./api/backfill.js";
 
 const routes = { "/api/webhook": webhook, "/api/health": health,
-                 "/api/export": exportH, "/api/prune": prune };
+                 "/api/export": exportH, "/api/prune": prune,
+                 "/api/backfill": backfill };
 const PORT = Number(process.env.PORT || 3000);
 
 http.createServer(async (req, res) => {
