@@ -11,3 +11,4 @@ chatlog.db-*
 node_modules/
 .vercel/
 .sync_state.json
+__pycache__/

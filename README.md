@@ -134,6 +134,29 @@ https://meta-message-seven.vercel.app/api/health
 
 ---
 
+## เติมแชทที่ webhook ตกหล่น (`/api/backfill`) — 23 ก.ย. 69
+
+**ปัญหา:** Meta ส่ง webhook ไม่ครบ วัดจริง 23 ก.ย. 69 เพจ OSUKA powertool ได้ webhook แค่ **53 จาก 437 ห้อง**
+ใน 24 ชม. (ข้อความ 148 จาก 4,261) ระบบปลายทางเลยสรุปผิดว่า "ไม่มีใครตอบลูกค้า" ทั้งที่แอดมินตอบไปแล้ว
+
+**ทางแก้:** cron บน Vercel ถาม Graph API เองทุก 5 นาที ห้องไหนที่ Graph บอกว่าขยับหลังของที่เรามี = ตกหล่น
+ดึงข้อความห้องนั้นมาเก็บลง `chatlog.api_fill`
+
+| | |
+|---|---|
+| ตัวทำงาน | `lib/backfill.js` · ปลายทาง `api/backfill.js` · ตั้งเวลาใน `vercel.json` |
+| ตารางปลายทาง | `chatlog.api_fill` (คีย์ `mid` · ตารางเดียวกับที่ `chat_gapfill.py` ในเครื่องใช้ เขียนซ้ำกันได้) |
+| env ที่ต้องมี | `META_ACCESS_TOKEN` (user token ที่เห็นทุกเพจ) · `CRON_SECRET` (Vercel แนบให้เองตอน cron ยิง) |
+| เรียกมือ | `GET /api/backfill?token=<EXPORT_TOKEN>&hours=6[&dry=1]` |
+| ทดสอบในเครื่อง | `node test_backfill.mjs --dry` |
+
+⚠️ **อ่านอย่างเดียว (GET)** ไม่ส่งข้อความ ไม่แก้อะไรบนเพจ
+⚠️ **ห้ามเขียนลง `raw_events`** -- ตารางนั้นคือก้อนตามที่ Meta ส่งมาเป๊ะ (`sync_to_mixhub` ใช้ `seq` เป็น cursor)
+⚠️ **ยิง Graph ขนานเสมอ** -- ไล่ทีละเพจใช้ ~20 วิ เกินเวลาที่ Vercel ให้ฟังก์ชันรัน (ขนานแล้วเหลือ ~5 วิ)
+⚠️ **แทรกฐานทีละแถวไม่ไหว** -- Supabase pooler แถวละ ~0.4 วิ ต้องรวมเป็น INSERT เดียวต่อห้อง
+⚠️ `schedule` ในไฟล์ตั้งไว้ทุก 5 นาที -- **แพลน Hobby ของ Vercel รัน cron ได้วันละครั้ง** ถ้ายังไม่ใช่ Pro
+   ตัวในเครื่อง (`chat_gapfill.py` + Task `MixhubChatAlert`) ยังทำงานคู่กันอยู่ ไม่ได้ทิ้ง
+
 ## ดึงเข้า mixhub
 
 รันบนเครื่อง AI-000-D (ฐาน mixhub อยู่ในวง LAN เซิร์ฟเวอร์ข้างนอกต่อเข้ามาไม่ได้ ต้องให้ฝั่งในไปดึง):
