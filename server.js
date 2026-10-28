@@ -16,10 +16,11 @@ import health from "./api/health.js";
 import exportH from "./api/export.js";
 import prune from "./api/prune.js";
 import backfill from "./api/backfill.js";
+import capi from "./api/capi.js";
 
 const routes = { "/api/webhook": webhook, "/api/health": health,
                  "/api/export": exportH, "/api/prune": prune,
-                 "/api/backfill": backfill };
+                 "/api/backfill": backfill, "/api/capi": capi };
 const PORT = Number(process.env.PORT || 3000);
 
 http.createServer(async (req, res) => {

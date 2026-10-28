@@ -4,6 +4,10 @@
     {
       "path": "/api/backfill",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/capi",
+      "schedule": "0 3 * * *"
     }
   ]
 }
