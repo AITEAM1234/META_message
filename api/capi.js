@@ -28,7 +28,12 @@
  *   CRON_SECRET         กันคนนอกยิง
  *   GRAPH_VERSION       เช่น v21.0 -- ตรวจเวอร์ชันล่าสุดก่อนตั้ง
  *   CAPI_TEST_CODE      (ไม่บังคับ) ใส่ตอนทดสอบ จะเข้าแท็บ Test Events ไม่กระทบยอดจริง
- *   HOLD_DAYS           (ไม่บังคับ) หน่วงกี่วันก่อนยิง ค่าตั้งต้น 3
+ *   HOLD_DAYS           (ไม่บังคับ) หน่วงกี่วันก่อนยิง ค่าตั้งต้น 0 = ยิงทันที
+ *
+ * ⚠️ ปลุกจากเครื่องเรา ไม่ใช่ cron ของ Vercel (เจ้าของเคาะ 28 ต.ค. 69)
+ *    Hobby ให้ cron วันละครั้งเท่านั้น -- หน่วง 0 วันแต่รอ cron อีก 24 ชม. ก็ไม่ได้ทันทีจริง
+ *    Task MixhubAdsPull บนเครื่อง server รันทุก 30 นาทีอยู่แล้ว ให้มันยิง
+ *      curl -s "https://<host>/api/capi?key=$CRON_SECRET"
  */
 
 import { db, ensureSchema } from "../lib/store.js";
@@ -40,7 +45,7 @@ const DATASET_CHAT_ORDERS = "1227750919543299";   // OSUKA Chat Orders -- ปล
 const DATASET_WEB_PIXEL   = "3634784846565263";   // Pixel Osukapowertool.com -- ห้ามแตะ
 
 const DAY = 86400000;
-const HOLD_DAYS = Math.max(0, Number(process.env.HOLD_DAYS ?? 3) || 0);
+const HOLD_DAYS = Math.max(0, Number(process.env.HOLD_DAYS ?? 0) || 0);
 
 /* ⚠️ Meta ไม่รับ event_time เก่ากว่า 7 วัน และถ้ามีอันเดียวเกิน
       "reject ทั้ง request และไม่ประมวลผล event ใดเลย"
