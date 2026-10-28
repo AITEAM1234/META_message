@@ -7,7 +7,9 @@ export default async function handler(req, res) {
     /* ป้ายบอกว่าโค้ดชุดไหนกำลังรันอยู่ -- 23 ก.ย. 69 เคยงงว่า push แล้วแต่ของใหม่ไม่ขึ้น
        (deployment เก่ายังเสิร์ฟอยู่) มีเลข commit ให้เทียบจะรู้ทันที */
     s.commit = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
-    s.endpoints = ["/api/webhook", "/api/export", "/api/prune", "/api/health", "/api/backfill"];
+    /* ⚠️ ลิสต์นี้เขียนมือ -- เพิ่ม route ใน server.js แล้วต้องมาเติมที่นี่ด้วย ไม่งั้นบอกไม่ครบ */
+    s.endpoints = ["/api/webhook", "/api/export", "/api/prune", "/api/health",
+                   "/api/backfill", "/api/capi"];
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.statusCode = 200;
     res.end(JSON.stringify(s, null, 2));
