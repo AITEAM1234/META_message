@@ -41,7 +41,8 @@ import { db, ensureSchema } from "../lib/store.js";
 const SCHEMA_NAME = (process.env.DB_SCHEMA || "chatlog").trim();
 const T = (n) => `${SCHEMA_NAME}.${n}`;
 
-const DATASET_CHAT_ORDERS = "1227750919543299";   // OSUKA Chat Orders -- ปลายทางของเรา
+/* ⚠️ OSUKA Chat Orders (1227750919543299) ใช้เป็นปลายทางไม่ได้ -- ไม่มีเพจผูก Meta ตีกลับทุกใบ
+      เก็บเลขไว้เป็นประวัติเท่านั้น ปลายทางจริงดูที่ datasetOf() */
 const DATASET_WEB_PIXEL   = "3634784846565263";   // Pixel Osukapowertool.com -- ห้ามแตะ
 
 const DAY = 86400000;
@@ -118,33 +119,64 @@ export default async function handler(req, res) {
     if (!rows.length)
       return json(200, { ok: true, expired: exp.rowCount, due: 0, sent: 0, dry });
 
-    const events = rows.map(buildEvent);
+    const token = process.env.CAPI_TOKEN;
+    const ver   = process.env.GRAPH_VERSION || "v21.0";
 
-    if (dry)
-      return json(200, { ok: true, expired: exp.rowCount, due: rows.length, dry: true, events });
+    /* ⚠️ ปลายทางเป็น dataset "ของเพจนั้น" ไม่ใช่ dataset รวมตัวเดียว (ตรวจจริง 29 ต.ค. 69)
+       Meta ตีกลับ "Messaging event no Page associated to dataset" ถ้ายิงเข้า dataset ที่ไม่มีเพจผูก
+       และหน้าตั้งค่า dataset ไม่มีช่องให้ผูกเพจ -- Meta สร้าง dataset ให้เพจเองตอนเพจเริ่มมี CTM
+       จึงต้องถาม Meta ตอนรันว่าเพจนี้ใช้ dataset ไหน ไม่ฮาร์ดโค้ด เพจใหม่จะได้ทำงานเอง */
+    const dsCache = new Map();
+    const datasetOf = async (pageId) => {
+      if (process.env.CAPI_DATASET_ID) return process.env.CAPI_DATASET_ID;   // บังคับทับได้
+      if (dsCache.has(pageId)) return dsCache.get(pageId);
+      let id = null;
+      try {
+        const u = `https://graph.facebook.com/${ver}/${pageId}/dataset?access_token=${encodeURIComponent(token)}`;
+        const j = await fetch(u).then((x) => x.json()).catch(() => ({}));
+        id = j?.data?.[0]?.id ?? null;
+      } catch { id = null; }
+      dsCache.set(pageId, id);
+      return id;
+    };
 
-    const dataset = process.env.CAPI_DATASET_ID || DATASET_CHAT_ORDERS;
-    const token   = process.env.CAPI_TOKEN;
-    const ver     = process.env.GRAPH_VERSION || "v21.0";
+    /* จัดกลุ่ม event ตาม dataset ปลายทาง */
+    const byDs = new Map();      // dataset -> {events, seqs}
+    const skipped = [];
+    for (const row of rows) {
+      const ds = await datasetOf(row.page_id);
+      if (!ds)                      { skipped.push({ seq: row.seq, page_id: row.page_id, why: "เพจนี้ยังไม่มี dataset" }); continue; }
+      /* กันพลาดชนิดที่แก้คืนไม่ได้ -- ยิงเข้า Pixel เว็บแล้วลบ event ออกไม่ได้ */
+      if (ds === DATASET_WEB_PIXEL) { skipped.push({ seq: row.seq, page_id: row.page_id, why: "เพจนี้ชี้ไป Pixel ของเว็บ -- ไม่ยิง" }); continue; }
+      if (!byDs.has(ds)) byDs.set(ds, { events: [], seqs: [] });
+      const g = byDs.get(ds);
+      g.events.push(buildEvent(row));
+      g.seqs.push(row.seq);
+    }
+
+    if (dry) {
+      return json(200, { ok: true, expired: exp.rowCount, due: rows.length, dry: true, skipped,
+        plan: [...byDs].map(([ds, g]) => ({ dataset: ds, n: g.events.length, events: g.events })) });
+    }
     if (!token) return json(500, { ok: false, error: "ไม่มี CAPI_TOKEN" });
-    /* กันพลาดชนิดที่แก้คืนไม่ได้ -- ยิงเข้า Pixel เว็บแล้วลบ event ออกไม่ได้ */
-    if (dataset === DATASET_WEB_PIXEL)
-      return json(400, { ok: false, error: "ห้ามยิงเข้า Pixel ของเว็บ (3634784846565263)" });
+    if (!byDs.size) return json(200, { ok: true, expired: exp.rowCount, due: rows.length, sent: 0, skipped });
 
-    const payload = { data: events, access_token: token };
-    if (process.env.CAPI_TEST_CODE) payload.test_event_code = process.env.CAPI_TEST_CODE;
+    /* ⚠️ Meta reject ทั้ง batch ถ้ามี event เดียวผิด -- ยิงแยก dataset และ mark sent เฉพาะกลุ่มที่ผ่าน */
+    const sentSeqs = [], results = [];
+    for (const [ds, g] of byDs) {
+      const payload = { data: g.events, access_token: token };
+      if (process.env.CAPI_TEST_CODE) payload.test_event_code = process.env.CAPI_TEST_CODE;
+      const r = await fetch(`https://graph.facebook.com/${ver}/${ds}/events`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const body = await r.json().catch(() => ({}));
+      results.push({ dataset: ds, n: g.events.length, ok: r.ok, meta: body });
+      if (r.ok) sentSeqs.push(...g.seqs);
+    }
+    if (!sentSeqs.length)
+      return json(502, { ok: false, expired: exp.rowCount, due: rows.length, skipped, results });
 
-    const r = await fetch(`https://graph.facebook.com/${ver}/${dataset}/events`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const body = await r.json().catch(() => ({}));
-
-    /* ⚠️ Meta reject ทั้ง batch ถ้ามี event เดียวผิด -- ไม่สำเร็จห้าม mark sent */
-    if (!r.ok) return json(502, { ok: false, expired: exp.rowCount, due: rows.length, meta: body });
-
-    const ids = rows.map((x) => x.seq);
+    const ids = sentSeqs;
     await c.query(
       `UPDATE ${T("order_summary")}
           SET state='sent', sent_at=$2, meta_event_id='sum-'||mid||'-'||ordinal
@@ -152,8 +184,8 @@ export default async function handler(req, res) {
       [ids, now]);
 
     return json(200, {
-      ok: true, expired: exp.rowCount, sent: rows.length,
-      test_mode: !!process.env.CAPI_TEST_CODE, meta: body,
+      ok: true, expired: exp.rowCount, due: rows.length, sent: sentSeqs.length,
+      skipped, results, test_mode: !!process.env.CAPI_TEST_CODE,
     });
   } catch (e) {
     console.error("[capi ล้มเหลว]", e);
