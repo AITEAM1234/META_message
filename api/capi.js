@@ -25,7 +25,8 @@
  * ENV ที่ต้องมี
  *   CAPI_DATASET_ID     ไม่ใส่ = ใช้ 1227750919543299 (OSUKA Chat Orders)
  *   CAPI_TOKEN          system user token ที่มีสิทธิ์ page_events
- *   CRON_SECRET         กันคนนอกยิง
+ *   CRON_SECRET         กันคนนอก (cron ของ Vercel แนบเป็น Bearer ให้เอง)
+ *   EXPORT_TOKEN        กุญแจสำรองไว้ยิงมือ `?token=` -- CRON_SECRET อ่านกลับไม่ได้ยิง
  *   GRAPH_VERSION       เช่น v21.0 -- ตรวจเวอร์ชันล่าสุดก่อนตั้ง
  *   CAPI_TEST_CODE      (ไม่บังคับ) ใส่ตอนทดสอบ จะเข้าแท็บ Test Events ไม่กระทบยอดจริง
  *   HOLD_DAYS           (ไม่บังคับ) หน่วงกี่วันก่อนยิง ค่าตั้งต้น 0 = ยิงทันที
@@ -33,7 +34,7 @@
  * ⚠️ ปลุกจากเครื่องเรา ไม่ใช่ cron ของ Vercel (เจ้าของเคาะ 28 ต.ค. 69)
  *    Hobby ให้ cron วันละครั้งเท่านั้น -- หน่วง 0 วันแต่รอ cron อีก 24 ชม. ก็ไม่ได้ทันทีจริง
  *    Task MixhubAdsPull บนเครื่อง server รันทุก 30 นาทีอยู่แล้ว ให้มันยิง
- *      curl -s "https://<host>/api/capi?key=$CRON_SECRET"
+ *      curl -s "https://<host>/api/capi?token=$EXPORT_TOKEN"
  */
 
 import { db, ensureSchema } from "../lib/store.js";
@@ -89,11 +90,17 @@ export default async function handler(req, res) {
     res.end(JSON.stringify(body, null, 1));
   };
 
-  /* กันคนนอก -- Vercel cron ส่ง Authorization: Bearer $CRON_SECRET มาให้ */
-  const secret = process.env.CRON_SECRET || "";
-  const given = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "")
-             || u.searchParams.get("key") || "";
-  if (!secret || given !== secret) return json(401, { ok: false, error: "unauthorized" });
+  /* กันคนนอก -- รับ 2 ทางเหมือน /api/backfill
+       cron  : Authorization: Bearer $CRON_SECRET (Vercel แนบให้เอง)
+       คนยิง : ?token=$EXPORT_TOKEN
+     ⚠️ ต้องมีทางที่สอง -- CRON_SECRET บน Vercel ตั้งเป็นชนิด sensitive = เขียนอย่างเดียว
+        อ่านกลับไม่ได้แม้แต่เจ้าของ ค่าที่สุ่มไว้ 22 ก.ย. 69 หายไปแล้ว (ยืนยัน 29 ต.ค. 69)
+        ไม่ได้ลดชั้นความปลอดภัย -- EXPORT_TOKEN เปิด /api/export (แชททั้งหมด) + /api/backfill อยู่แล้ว */
+  const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const cronOk = process.env.CRON_SECRET
+              && (bearer === process.env.CRON_SECRET || u.searchParams.get("key") === process.env.CRON_SECRET);
+  const manOk  = process.env.EXPORT_TOKEN && u.searchParams.get("token") === process.env.EXPORT_TOKEN;
+  if (!cronOk && !manOk) return json(401, { ok: false, error: "unauthorized" });
 
   const dry = u.searchParams.get("dry") === "1";
   const now = Date.now();
